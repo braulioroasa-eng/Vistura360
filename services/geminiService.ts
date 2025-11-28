@@ -3,15 +3,8 @@ import { ChatModelMode } from "../types";
 
 // Helper to get the correct model name based on mode
 const getModelName = (mode: ChatModelMode): string => {
-  switch (mode) {
-    case ChatModelMode.FAST:
-      return 'gemini-1.5-flash'; // Rápido para cosas sencillas
-    case ChatModelMode.THINKING:
-      return 'gemini-2.0-flash-thinking-exp-01-21'; // Modelo de razonamiento (si falla, usa 1.5-pro)
-    case ChatModelMode.STANDARD:
-    default:
-      return 'gemini-1.5-pro'; // <--- EL CAMBIO CLAVE: Usamos la versión estable y potente
-  }
+  // USAMOS "gemini-1.5-flash" PARA TODO PORQUE ES EL MÁS COMPATIBLE
+  return 'gemini-1.5-flash';
 };
 
 const getThinkingConfig = (mode: ChatModelMode) => {
