@@ -1,11 +1,5 @@
 // @ts-ignore
-import { GoogleGenAI } from "@google/genai";
 import { ChatModelMode } from "../types";
-
-// Usamos el modelo Flash que es el más rápido y estable
-const getModelName = (mode: ChatModelMode): string => {
-  return 'gemini-1.5-flash';
-};
 
 export const streamGeminiResponse = async (
   prompt: string,
@@ -13,46 +7,62 @@ export const streamGeminiResponse = async (
   history: { role: string; parts: { text: string }[] }[]
 ): Promise<AsyncGenerator<string, void, unknown>> => {
   
+  // 1. Obtenemos la clave de forma segura
   // @ts-ignore
   const apiKey = import.meta.env.VITE_API_KEY;
+  if (!apiKey) throw new Error("Falta la API Key. Verifica Vercel.");
 
-  if (!apiKey) {
-    throw new Error("Falta la API Key. Asegúrate de poner VITE_API_KEY en Vercel.");
-  }
-
-  // Configuración para usar la versión Beta (evita el error 404)
-  const ai = new GoogleGenAI({ 
-    apiKey: apiKey
+  // 2. Preparamos los mensajes para Google
+  // Convertimos el historial al formato que pide la API REST
+  const contents = history.map(msg => ({
+    role: msg.role === 'user' ? 'user' : 'model',
+    parts: msg.parts
+  }));
+  
+  // Agregamos la pregunta actual del usuario
+  contents.push({
+    role: 'user',
+    parts: [{ text: prompt }]
   });
 
-  const modelName = getModelName(mode);
-  
-  const systemInstruction = `Eres "Vistura", un asistente inmobiliario de élite para Vistura360. 
-  Tu tono es profesional y servicial. Responde SIEMPRE en Español.`;
+  const systemInstruction = {
+    parts: [{ text: `Eres "Vistura", un asistente inmobiliario de élite. 
+    Tu tono es profesional y servicial. Responde SIEMPRE en Español. 
+    Sé conciso.` }]
+  };
 
   try {
-    const chat = ai.chats.create({
-      model: modelName,
-      config: {
-        systemInstruction,
-        temperature: 0.7,
-      },
-      history: history.map(h => ({
-        role: h.role,
-        parts: h.parts
-      })),
-    });
+    // 3. CONEXIÓN DIRECTA (Sin librerías que fallen)
+    // Usamos el endpoint REST oficial que nunca falla
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: contents,
+          systemInstruction: systemInstruction,
+          generationConfig: { temperature: 0.7 }
+        })
+      }
+    );
 
-    const result = await chat.sendMessageStream({ message: prompt });
-    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Error de Google: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    const fullText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    // 4. GENERADOR (Simulamos el efecto de escritura)
+    // Esto hace que el chat no se vea "de golpe", sino fluido.
     async function* generator() {
-      // @ts-ignore
-      for await (const chunk of result) {
-        // @ts-ignore
-        const text = chunk.text; 
-        if (text) {
-          yield text;
-        }
+      const words = fullText.split(" ");
+      for (const word of words) {
+        yield word + " ";
+        // Pequeña pausa para efecto visual
+        await new Promise(resolve => setTimeout(resolve, 30)); 
       }
     }
 
@@ -60,6 +70,10 @@ export const streamGeminiResponse = async (
 
   } catch (error) {
     console.error("Gemini API Error:", error);
-    throw error;
+    // Mensaje de error amigable para el chat
+    async function* errorGenerator() {
+      yield "Lo siento, hubo un error de conexión. Por favor intenta de nuevo.";
+    }
+    return errorGenerator();
   }
 };
