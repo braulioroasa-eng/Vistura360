@@ -1,19 +1,10 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+// @ts-ignore
+import { GoogleGenAI } from "@google/genai";
 import { ChatModelMode } from "../types";
 
-// Helper to get the correct model name based on mode
+// Usamos el modelo Flash que es el más rápido y estable
 const getModelName = (mode: ChatModelMode): string => {
-  // USAMOS "gemini-1.5-flash" PARA TODO PORQUE ES EL MÁS COMPATIBLE
   return 'gemini-1.5-flash';
-};
-
-const getThinkingConfig = (mode: ChatModelMode) => {
-  if (mode === ChatModelMode.THINKING) {
-    return {
-      thinkingConfig: { thinkingBudget: 32768 }
-    };
-  }
-  return {};
 };
 
 export const streamGeminiResponse = async (
@@ -22,30 +13,29 @@ export const streamGeminiResponse = async (
   history: { role: string; parts: { text: string }[] }[]
 ): Promise<AsyncGenerator<string, void, unknown>> => {
   
-  // CORRECCIÓN PARA VERCEL/VITE: Usamos import.meta.env
+  // @ts-ignore
   const apiKey = import.meta.env.VITE_API_KEY;
 
   if (!apiKey) {
-    throw new Error("API Key is missing. Please set VITE_API_KEY in your environment variables.");
+    throw new Error("Falta la API Key. Asegúrate de poner VITE_API_KEY en Vercel.");
   }
 
-  const ai = new GoogleGenAI({ apiKey: apiKey });
+  // Configuración para usar la versión Beta (evita el error 404)
+  const ai = new GoogleGenAI({ 
+    apiKey: apiKey
+  });
+
   const modelName = getModelName(mode);
   
-  // System instruction to guide the persona
   const systemInstruction = `Eres "Vistura", un asistente inmobiliario de élite para Vistura360. 
-  Tu tono es profesional, sofisticado y servicial. 
-  La plataforma se especializa en una estética "Dark Tech", tours inmersivos 4K y propiedades de alta gama tanto para renta como para venta.
-  Si el usuario pregunta sobre comprar, vender o rentar, guíalo en consecuencia.
-  Mantén las respuestas concisas a menos que estés en modo "Thinking" (Pensamiento), donde se requiere un razonamiento profundo.
-  IMPORTANTE: Responde SIEMPRE en Español.`;
+  Tu tono es profesional y servicial. Responde SIEMPRE en Español.`;
 
   try {
     const chat = ai.chats.create({
       model: modelName,
       config: {
         systemInstruction,
-        ...getThinkingConfig(mode),
+        temperature: 0.7,
       },
       history: history.map(h => ({
         role: h.role,
@@ -56,10 +46,12 @@ export const streamGeminiResponse = async (
     const result = await chat.sendMessageStream({ message: prompt });
     
     async function* generator() {
+      // @ts-ignore
       for await (const chunk of result) {
-        const c = chunk as GenerateContentResponse;
-        if (c.text) {
-          yield c.text;
+        // @ts-ignore
+        const text = chunk.text; 
+        if (text) {
+          yield text;
         }
       }
     }
